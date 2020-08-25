@@ -1,2 +1,3 @@
 #! /bin/bash
-telegraf --config ./tests/telegraf.conf --test
+go build
+telegraf --config ./tests/telegraf.conf 

@@ -8,11 +8,7 @@ It is mean to be compiled separately from telegraf and used externally with tele
 
 build the binary
 
-`$ go build -o dist/telegraf-envoy src/main.go`
-    
- (if you're using windows, you'll want to give it an .exe extension)
-
-`$ go build -o dist/telegraf-envoy.exe src/main.go`
+`$ go build`
 
 
 # Configuration
@@ -20,10 +16,24 @@ Plugin can be called from telegraf now using execd using this kind of configurat
 
 ```
 [[inputs.execd]]
-  command = ["/path/to/telegraf-envoy_binary"]
+  command = ["/path/to/telegraf-envoy_binary", "-config", "/path/to/telegraf-envoy-plugin-config.conf", "-poll_interval", "5m]
   signal = "none"
   
 # sample output: write metrics to stdout
 [[outputs.file]]
   files = ["stdout"]
 ```
+
+By default, pool_interval is 5m. 
+
+# Plugin Configuration
+Envoy plugin can be configured using a specific config file, like:
+```
+[[inputs.envoy]]
+    base_url = "http://envoy/"
+  	## Envoy Serial Number in order to get inverters detailled statistics 
+  	## (see http://envoy/ to get it !)
+  	serial_number = "xxxxxxxxxxxxx"
+```
+
+By default, base_url is *http://envoy/*. 
