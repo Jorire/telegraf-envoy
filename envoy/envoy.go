@@ -214,8 +214,7 @@ func (r *Envoy) collectConsumption(acc telegraf.Accumulator, envoyData DeviceDat
 				},
 				map[string]string{
 					"index": cons.Type + strconv.Itoa(index),
-				},
-				time.Unix(int64(cons.ReadingTime), 0))
+				})
 		}
 	}
 	return totalConsumptionW, totalConsumptionWh
@@ -248,8 +247,7 @@ func (r *Envoy) collectProduction(acc telegraf.Accumulator, envoyData DeviceData
 				},
 				map[string]string{
 					"index": prod.Type + strconv.Itoa(index), //Device id
-				},
-				time.Unix(int64(prod.ReadingTime), 0))
+				})
 		}
 	}
 	return totalProductionW, totalProductionWh
@@ -281,8 +279,7 @@ func (r *Envoy) collectInvertersData(acc telegraf.Accumulator, invertersData Inv
 			},
 			map[string]string{
 				"serialNumber": inverterData.SerialNumber,
-			},
-			time.Unix(int64(inverterData.LastReportDate), 0))
+			})
 	}
 }
 
