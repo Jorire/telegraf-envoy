@@ -1,0 +1,3 @@
+[[inputs.envoy]]
+  base_url = "http://envoy/"
+  serial_number = "xxxxxxxxxxx"
