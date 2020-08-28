@@ -4,10 +4,10 @@ package envoy
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"mime"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/influxdata/telegraf"
@@ -86,12 +86,12 @@ type DeviceData struct {
 		VarhLagToday     float64 `json:"varhLagToday"`
 	} `json:"consumption"`
 	Storage []struct {
-		Type        string `json:"type"`
-		ActiveCount int    `json:"activeCount"`
-		ReadingTime int    `json:"readingTime"`
+		Type        string  `json:"type"`
+		ActiveCount int     `json:"activeCount"`
+		ReadingTime int     `json:"readingTime"`
 		WNow        float64 `json:"wNow"`
 		WhNow       float64 `json:"whNow"`
-		State       string `json:"state"`
+		State       string  `json:"state"`
 	} `json:"storage"`
 }
 
@@ -196,96 +196,157 @@ func (r *Envoy) collectGeneralInformations(acc telegraf.Accumulator, envoyData D
 	}
 }
 
-//collectConsumption Add metrics about site electric consumption
-func (r *Envoy) collectConsumption(acc telegraf.Accumulator, envoyData DeviceData) (float64, float64) {
-	totalConsumptionW := 0.0
-	totalConsumptionWh := 0.0
+//collectProduction Add metrics about solar panels production
+func (r *Envoy) collectInstantProduction(acc telegraf.Accumulator, envoyData DeviceData) {
+	instantProduction := 0.0
+	instantConsumption := 0.0
+	instantNet := 0.0
+	instantImport := 0.0
+	instantExport := 0.0
 
-	index := 0
-	for _, cons := range envoyData.Consumption {
-		if cons.MeasurementType == "total-consumption" {
-			index++
-			totalConsumptionWh += cons.WhToday
-			totalConsumptionW += cons.WNow
-			acc.AddFields(cons.MeasurementType,
-				map[string]interface{}{
-					"now":  cons.WNow,
-					"today": cons.WhToday,
-				},
-				map[string]string{
-					"index": cons.Type + strconv.Itoa(index),
-				})
+	for _, prod := range envoyData.Production {
+		if prod.MeasurementType == "production" {
+			if prod.WNow >= 3.0 {
+				instantProduction += prod.WNow
+			}
 		}
 	}
-	return totalConsumptionW, totalConsumptionWh
-}
-
-//ifThenElse helper replacement for ternary operations
-func ifThenElse(condition bool, a interface{}, b interface{}) interface{} {
-	if condition {
-		return a
+	for _, cons := range envoyData.Consumption {
+		if cons.MeasurementType == "total-consumption" {
+			instantConsumption += cons.WNow
+		}
 	}
-	return b
+	instantNet = instantProduction - instantConsumption
+	if instantNet > 0 {
+		instantExport = math.Abs(instantNet)
+	} else {
+		instantImport = math.Abs(instantNet)
+	}
+
+	acc.AddFields("instant-report",
+		map[string]interface{}{
+			"production":  instantProduction,
+			"consumption": instantConsumption,
+			"net":         instantNet,
+			"import":      instantImport,
+			"export":      instantExport,
+		},
+		map[string]string{
+			"envoy": r.SerialNumber,
+			"type":  "instant",
+		})
 }
 
 //collectProduction Add metrics about solar panels production
-func (r *Envoy) collectProduction(acc telegraf.Accumulator, envoyData DeviceData) (float64, float64) {
-	totalProductionW := 0.0
-	totalProductionWh := 0.0
+func (r *Envoy) collectTodayProduction(acc telegraf.Accumulator, envoyData DeviceData) {
+	todayProduction := 0.0
+	todayConsumption := 0.0
+	todayNet := 0.0
+	todayImport := 0.0
+	todayExport := 0.0
 
-	index := 0
 	for _, prod := range envoyData.Production {
 		if prod.MeasurementType == "production" {
-			// Production statistics (watt, watt/h)
-			index++
-			totalProductionWh += prod.WhToday
-			totalProductionW += prod.WNow
-			acc.AddFields(prod.MeasurementType,
-				map[string]interface{}{
-					"now":   ifThenElse(prod.WNow <= 4.0, 0.0, prod.WNow), //Watt
-					"today": prod.WhToday,                             //Watt/h
-				},
-				map[string]string{
-					"index": prod.Type + strconv.Itoa(index), //Device id
-				})
+			todayProduction += prod.WhToday
 		}
 	}
-	return totalProductionW, totalProductionWh
+	for _, cons := range envoyData.Consumption {
+		if cons.MeasurementType == "total-consumption" {
+			todayConsumption += cons.WhToday
+		}
+	}
+	todayNet = todayProduction - todayConsumption
+	if todayNet > 0 {
+		todayExport = math.Abs(todayNet)
+	} else {
+		todayImport = math.Abs(todayNet)
+	}
+
+	acc.AddFields("today-report",
+		map[string]interface{}{
+			"production":  todayProduction,
+			"consumption": todayConsumption,
+			"net":         todayNet,
+			"import":      todayImport,
+			"export":      todayExport,
+		},
+		map[string]string{
+			"envoy": r.SerialNumber,
+			"type":  "today",
+		})
 }
 
 //collectNetConsumption Add metrics about solar panels production
-func (r *Envoy) collectNetConsumption(acc telegraf.Accumulator, totalProductionW float64, totalProductionWh float64, totalConsumptionW float64, totalConsumptionWh float64) {
-
-	acc.AddFields("net-consumption",
+func (r *Envoy) collectNetConsumption(acc telegraf.Accumulator, envoyData DeviceData) {
+	todayNet := 0.0
+	instantNet := 0.0
+	instantImport := 0.0
+	instantExport := 0.0
+	todayImport := 0.0
+	todayExport := 0.0
+	for _, prod := range envoyData.Consumption {
+		if prod.MeasurementType == "net-consumption" {
+			instantNet += prod.WNow
+			todayNet += prod.WhToday
+		}
+	}
+	if instantNet > 0 {
+		instantExport = math.Abs(instantNet)
+	} else {
+		instantImport = math.Abs(instantNet)
+	}
+	if todayNet > 0 {
+		todayExport = math.Abs(todayNet)
+	} else {
+		todayImport = math.Abs(todayNet)
+	}
+	acc.AddFields("net-report",
 		map[string]interface{}{
-			"now":    float64(totalConsumptionW - totalProductionW),
-			"today":  float64(totalConsumptionWh - totalProductionWh),
+			"net":    instantNet,
+			"import": instantImport,
+			"export": instantExport,
 		},
 		map[string]string{
-			"reference": "computed",
+			"envoy": r.SerialNumber,
+			"type":  "instant",
+		})
+	acc.AddFields("net-report",
+		map[string]interface{}{
+			"net":    instantNet,
+			"import": todayImport,
+			"export": todayExport,
+		},
+		map[string]string{
+			"envoy": r.SerialNumber,
+			"type":  "today",
 		})
 }
 
 //collectNetConsumption Add metrics about solar panels production
 func (r *Envoy) collectInvertersData(acc telegraf.Accumulator, invertersData InvertersData) {
-  before30 := time.Now().Add(-30 * time.Minute)
+	before30 := time.Now().Add(-30 * time.Minute)
 	for _, inverterData := range invertersData {
-    var status int
-    reportDate := time.Unix(inverterData.LastReportDate, 0)
-    if reportDate.After(before30) {
-      status = 1
-    }else{
-      status = 0
-    }
+		var status int
+		reportDate := time.Unix(inverterData.LastReportDate, 0)
+		if reportDate.After(before30) {
+			status = 1
+		} else {
+			status = 0
+		}
+		instant := 0.0
+		if inverterData.LastReportWatts >= 3.0 {
+			instant = inverterData.LastReportWatts
+		}
 
 		acc.AddFields("inverter",
 			map[string]interface{}{
-				"now":    ifThenElse(inverterData.LastReportWatts <= 4.0, 0.0, inverterData.LastReportWatts),
-				"today": inverterData.MaxReportWatts,
-        "status": status,
+				"instant": instant,
+				"today":   inverterData.MaxReportWatts,
+				"status":  status,
 			},
 			map[string]string{
 				"serialNumber": inverterData.SerialNumber,
+				"envoy":        r.SerialNumber,
 			})
 	}
 }
@@ -300,9 +361,9 @@ func (r *Envoy) Gather(acc telegraf.Accumulator) error {
 
 	if envoyData != nil {
 		r.collectGeneralInformations(acc, *envoyData)
-		totalProductionW, totalProductionWh := r.collectProduction(acc, *envoyData)
-		totalConsumptionW, totalConsumptionWh := r.collectConsumption(acc, *envoyData)
-		r.collectNetConsumption(acc, totalProductionW, totalProductionWh, totalConsumptionW, totalConsumptionWh)
+		r.collectInstantProduction(acc, *envoyData)
+		r.collectTodayProduction(acc, *envoyData)
+		r.collectNetConsumption(acc, *envoyData)
 	} else {
 		return fmt.Errorf("No data gathered")
 	}
