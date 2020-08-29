@@ -290,21 +290,21 @@ func (r *Envoy) collectNetConsumption(acc telegraf.Accumulator, envoyData Device
 			todayNet += prod.WhToday
 		}
 	}
-	if instantNet > 0 {
+	if instantNet < 0 {
 		instantExport = math.Abs(instantNet)
 	} else {
 		instantImport = math.Abs(instantNet)
 	}
-	if todayNet > 0 {
+	if todayNet < 0 {
 		todayExport = math.Abs(todayNet)
 	} else {
 		todayImport = math.Abs(todayNet)
 	}
 	acc.AddFields("net-report",
 		map[string]interface{}{
-			"net":    instantNet,
-			"import": instantImport,
-			"export": instantExport,
+			"net-consumption": instantNet,
+			"import":          instantImport,
+			"export":          instantExport,
 		},
 		map[string]string{
 			"envoy": r.SerialNumber,
@@ -312,9 +312,9 @@ func (r *Envoy) collectNetConsumption(acc telegraf.Accumulator, envoyData Device
 		})
 	acc.AddFields("net-report",
 		map[string]interface{}{
-			"net":    instantNet,
-			"import": todayImport,
-			"export": todayExport,
+			"net-consumption": todayNet,
+			"import":          todayImport,
+			"export":          todayExport,
 		},
 		map[string]string{
 			"envoy": r.SerialNumber,
